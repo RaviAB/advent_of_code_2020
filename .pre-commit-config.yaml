@@ -1,0 +1,49 @@
+repos:
+  - repo: https://github.com/timothycrosley/isort
+    rev: 4.3.21-2
+    hooks:
+      - id: isort
+        additional_dependencies: [toml]
+        exclude: ^.*/?setup\.py$
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v2.3.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^tests/.*/fixtures/.*
+      - id: end-of-file-fixer
+        exclude: ^tests/.*/fixtures/.*
+      - id: debug-statements
+
+  - repo: local
+    hooks:
+
+    - id: black
+      name: black
+      entry: poetry run black
+      require_serial: true
+      language: system
+      types: [python]
+
+    - id: mypy
+      name: mypy
+      entry: poetry run mypy --config pyproject.toml
+      language: system
+      types: [python]
+      require_serial: true
+
+    - id: flake8
+      name: flake8
+      entry: poetry run flake8
+      language: system
+      types: [python]
+      require_serial: true
+
+    # - id: tests
+    #   name: run tests
+    #   entry: poetry run pytest --no-cov
+    #   language: system
+    #   stages: [push]
+    #   require_serial: true
+    #   pass_filenames: false
+    #   always_run: true
