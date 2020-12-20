@@ -1,7 +1,8 @@
+import itertools
 from collections import Counter
 from enum import Enum, unique
 from functools import partial
-from typing import Iterable, Sequence, Tuple
+from typing import Callable, Dict, Iterable, Tuple
 
 TEST_INPUT = """\
 L.LL.LL.LL
@@ -24,7 +25,10 @@ class State(Enum):
     EMPTY = "L"
 
 
-Board = Sequence[Sequence[State]]
+Position = Tuple[int, int]
+Board = Dict[Position, State]
+Neighbors = Iterable[Position]
+GetNeighborsFunc = Callable[[int, int, Board], Neighbors]
 
 
 def get_input() -> Iterable[str]:
@@ -37,10 +41,14 @@ def get_test_input() -> Iterable[str]:
 
 
 def get_board(input_lines: Iterable[str]) -> Board:
-    return [[State(character) for character in list(line)] for line in input_lines]
+    return {
+        (row, col): State(character)
+        for row, line in enumerate(input_lines)
+        for col, character in enumerate(line)
+    }
 
 
-def get_neighbors(row: int, col: int) -> Iterable[Tuple[int, int]]:
+def get_neighbors(row: int, col: int, _: Board) -> Neighbors:
     return (
         (row + row_offset, col + col_offset)
         for row_offset in (-1, 0, 1)
@@ -49,26 +57,51 @@ def get_neighbors(row: int, col: int) -> Iterable[Tuple[int, int]]:
     )
 
 
+def get_positions(
+    initial_position: Position, movement_vector: Position
+) -> Iterable[Position]:
+    for index in itertools.count(start=1):
+        yield (
+            initial_position[0] + (movement_vector[0] * index),
+            initial_position[1] + (movement_vector[1] * index),
+        )
+
+
+def get_first_seat(
+    initial_position: Position, movement_vector: Position, board: Board
+) -> Position:
+    for position in get_positions(initial_position, movement_vector):
+        if position not in board:
+            return position
+        if board[position] != State.FLOOR:
+            return position
+
+    raise AssertionError
+
+
+def get_visible_neighbors(row: int, col: int, board: Board) -> Neighbors:
+    for row_offset in (-1, 0, 1):
+        for col_offset in (-1, 0, 1):
+            if not row_offset == col_offset == 0:
+                yield get_first_seat((row, col), (row_offset, col_offset), board)
+
+
 def is_alive(row: int, col: int, board: Board) -> bool:
-    num_rows = len(board)
-    num_cols = len(board[0])
-
-    return 0 <= row < num_rows and 0 <= col < num_cols and board[row][col] == State.FULL
-
-
-def get_alive_neighbors_count(row: int, col: int, board: Board) -> int:
-    return sum(is_alive(row, col, board) for row, col in get_neighbors(row, col))
-
-
-def get_alive_visible_count(row: int, col: int, board: Board) -> int:
-    return sum(is_alive(row, col, board) for row, col in get_neighbors(row, col))
+    return board.get((row, col), State.FLOOR) == State.FULL
 
 
 def get_new_state(
-    row: int, col: int, board: Board, threshold: int, alive_neighbor_func
+    row: int,
+    col: int,
+    board: Board,
+    threshold: int,
+    get_neighbors_func: GetNeighborsFunc,
 ) -> State:
-    current_state = board[row][col]
-    alive_neighbors_count = alive_neighbor_func(row, col, board)
+    current_state = board[(row, col)]
+    alive_neighbors_count = sum(
+        is_alive(row, col, board) for row, col in get_neighbors_func(row, col, board)
+    )
+
     if current_state == State.EMPTY and alive_neighbors_count == 0:
         return State.FULL
     if current_state == State.FULL and alive_neighbors_count >= threshold:
@@ -77,33 +110,37 @@ def get_new_state(
     return current_state
 
 
-def get_new_board(board: Board, state_transition_func) -> Board:
-    return [
-        [state_transition_func(row, col, board) for col in range(len(board[row]))]
-        for row in range(len(board))
-    ]
+def get_new_board(
+    board: Board, state_transition_func: Callable[[int, int, Board], State]
+) -> Board:
+    return {
+        position: state_transition_func(*position, board) for position in board.keys()
+    }
 
 
 def get_final_board(initial_board: Board, state_transition_func) -> Board:
     old_board = initial_board
     new_board = initial_board
 
-    while True:
-        new_board, old_board = (
-            get_new_board(new_board, state_transition_func),
-            new_board,
-        )
+    while (new_board := get_new_board(new_board, state_transition_func)) != old_board:
+        old_board = new_board
 
-        if new_board == old_board:
-            return new_board
+    return new_board
 
 
 INITIAL_BOARD = get_board(get_input())
 FINAL_BOARD = get_final_board(
     INITIAL_BOARD,
-    partial(get_new_state, threshold=4, alive_neighbor_func=get_alive_neighbors_count),
+    partial(get_new_state, threshold=4, get_neighbors_func=get_neighbors),
 )
 
-FINAL_ALIVE = Counter(state for row in FINAL_BOARD for state in row)
+FINAL_ALIVE = Counter(FINAL_BOARD.values())
+print(FINAL_ALIVE[State.FULL])
 
-print(FINAL_ALIVE)
+FINAL_BOARD2 = get_final_board(
+    INITIAL_BOARD,
+    partial(get_new_state, threshold=5, get_neighbors_func=get_visible_neighbors),
+)
+
+FINAL_ALIVE2 = Counter(FINAL_BOARD2.values())
+print(FINAL_ALIVE2[State.FULL])
